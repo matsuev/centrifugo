@@ -20,15 +20,15 @@ var _ SubscribeProxy = (*GRPCSubscribeProxy)(nil)
 
 // NewGRPCSubscribeProxy ...
 func NewGRPCSubscribeProxy(p Config) (*GRPCSubscribeProxy, error) {
-	host, err := getGrpcHost(p.Endpoint)
-	if err != nil {
-		return nil, fmt.Errorf("error getting grpc host: %v", err)
-	}
+	// host, err := getGrpcHost(p.Endpoint)
+	// if err != nil {
+	// 	return nil, fmt.Errorf("error getting grpc host: %v", err)
+	// }
 	dialOpts, err := getDialOpts(p)
 	if err != nil {
 		return nil, fmt.Errorf("error creating GRPC dial options: %v", err)
 	}
-	conn, err := grpc.NewClient(host, dialOpts...)
+	conn, err := grpc.NewClient(p.Endpoint.Host, dialOpts...)
 	if err != nil {
 		return nil, fmt.Errorf("error connecting to GRPC proxy server: %v", err)
 	}
