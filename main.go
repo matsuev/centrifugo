@@ -22,6 +22,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/pprof"
+	"net/url"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -1332,6 +1333,14 @@ func setupLogging() *os.File {
 	return nil
 }
 
+func redactedUrl(endpoint string) string {
+	if parsedUrl, err := url.Parse(endpoint); err != nil {
+		return ""
+	} else {
+		return parsedUrl.Redacted()
+	}
+}
+
 func handleSignals(
 	configFile string, n *centrifuge.Node, ruleContainer *rule.Container, tokenVerifier *jwtverify.VerifierJWT,
 	subTokenVerifier *jwtverify.VerifierJWT, httpServers []*http.Server, grpcAPIServer *grpc.Server, grpcUniServer *grpc.Server,
@@ -2090,7 +2099,7 @@ func proxyMapConfig() (*client.ProxyMap, bool) {
 		if err != nil {
 			log.Fatal().Msgf("error creating connect proxy: %v", err)
 		}
-		log.Info().Str("endpoint", connectEndpoint).Msg("connect proxy enabled")
+		log.Info().Str("endpoint", redactedUrl(connectEndpoint)).Msg("connect proxy enabled")
 	}
 
 	if refreshEndpoint != "" {
@@ -2101,7 +2110,7 @@ func proxyMapConfig() (*client.ProxyMap, bool) {
 		if err != nil {
 			log.Fatal().Msgf("error creating refresh proxy: %v", err)
 		}
-		log.Info().Str("endpoint", refreshEndpoint).Msg("refresh proxy enabled")
+		log.Info().Str("endpoint", redactedUrl(refreshEndpoint)).Msg("refresh proxy enabled")
 	}
 
 	if subscribeEndpoint != "" {
@@ -2112,7 +2121,7 @@ func proxyMapConfig() (*client.ProxyMap, bool) {
 			log.Fatal().Msgf("error creating subscribe proxy: %v", err)
 		}
 		proxyMap.SubscribeProxies[""] = sp
-		log.Info().Str("endpoint", subscribeEndpoint).Msg("subscribe proxy enabled")
+		log.Info().Str("endpoint", redactedUrl(subscribeEndpoint)).Msg("subscribe proxy enabled")
 	}
 
 	if publishEndpoint != "" {
@@ -2123,7 +2132,7 @@ func proxyMapConfig() (*client.ProxyMap, bool) {
 			log.Fatal().Msgf("error creating publish proxy: %v", err)
 		}
 		proxyMap.PublishProxies[""] = pp
-		log.Info().Str("endpoint", publishEndpoint).Msg("publish proxy enabled")
+		log.Info().Str("endpoint", redactedUrl(publishEndpoint)).Msg("publish proxy enabled")
 	}
 
 	if rpcEndpoint != "" {
@@ -2134,7 +2143,7 @@ func proxyMapConfig() (*client.ProxyMap, bool) {
 			log.Fatal().Msgf("error creating rpc proxy: %v", err)
 		}
 		proxyMap.RpcProxies[""] = rp
-		log.Info().Str("endpoint", rpcEndpoint).Msg("RPC proxy enabled")
+		log.Info().Str("endpoint", redactedUrl(rpcEndpoint)).Msg("RPC proxy enabled")
 	}
 
 	if subRefreshEndpoint != "" {
@@ -2145,7 +2154,7 @@ func proxyMapConfig() (*client.ProxyMap, bool) {
 			log.Fatal().Msgf("error creating sub refresh proxy: %v", err)
 		}
 		proxyMap.SubRefreshProxies[""] = srp
-		log.Info().Str("endpoint", subRefreshEndpoint).Msg("sub refresh proxy enabled")
+		log.Info().Str("endpoint", redactedUrl(subRefreshEndpoint)).Msg("sub refresh proxy enabled")
 	}
 
 	if proxyStreamSubscribeEndpoint != "" {
@@ -2156,7 +2165,7 @@ func proxyMapConfig() (*client.ProxyMap, bool) {
 			log.Fatal().Msgf("error creating subscribe stream proxy: %v", err)
 		}
 		proxyMap.SubscribeStreamProxies[""] = streamProxy
-		log.Info().Str("endpoint", proxyStreamSubscribeEndpoint).Msg("subscribe stream proxy enabled")
+		log.Info().Str("endpoint", redactedUrl(proxyStreamSubscribeEndpoint)).Msg("subscribe stream proxy enabled")
 	}
 
 	keepHeadersInContext := connectEndpoint != "" || refreshEndpoint != "" ||
