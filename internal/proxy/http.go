@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
@@ -27,7 +28,7 @@ const DefaultMaxIdleConnsPerHost = 255
 
 // HTTPCaller is responsible for calling HTTP.
 type HTTPCaller interface {
-	CallHTTP(context.Context, string, http.Header, []byte) ([]byte, error)
+	CallHTTP(context.Context, *url.URL, http.Header, []byte) ([]byte, error)
 }
 
 type httpCaller struct {
@@ -59,8 +60,8 @@ func (e *statusCodeError) Error() string {
 	return fmt.Sprintf("unexpected HTTP status code: %d", e.Code)
 }
 
-func (c *httpCaller) CallHTTP(ctx context.Context, endpoint string, header http.Header, reqData []byte) ([]byte, error) {
-	req, err := http.NewRequest("POST", endpoint, bytes.NewReader(reqData))
+func (c *httpCaller) CallHTTP(ctx context.Context, endpoint *url.URL, header http.Header, reqData []byte) ([]byte, error) {
+	req, err := http.NewRequest("POST", endpoint.String(), bytes.NewReader(reqData))
 	if err != nil {
 		return nil, fmt.Errorf("error constructing HTTP request: %w", err)
 	}

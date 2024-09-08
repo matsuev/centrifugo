@@ -4,7 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"net"
-	"strings"
+	"net/url"
 
 	"github.com/centrifugal/centrifugo/v5/internal/tools"
 )
@@ -14,7 +14,7 @@ type Config struct {
 	// Name is a unique name of proxy to reference.
 	Name string `mapstructure:"name" json:"name"`
 	// Endpoint - HTTP address or GRPC service endpoint.
-	Endpoint string `mapstructure:"endpoint" json:"endpoint"`
+	Endpoint *url.URL `mapstructure:"endpoint" json:"endpoint"`
 	// Timeout for proxy request.
 	Timeout tools.Duration `mapstructure:"timeout" json:"timeout,omitempty"`
 
@@ -50,6 +50,11 @@ type Config struct {
 	testGrpcDialer func(context.Context, string) (net.Conn, error)
 }
 
+const (
+	SchemeHTTP  = "http"
+	SchemeHTTPS = "https"
+)
+
 func getEncoding(useBase64 bool) string {
 	if useBase64 {
 		return "binary"
@@ -57,8 +62,8 @@ func getEncoding(useBase64 bool) string {
 	return "json"
 }
 
-func isHttpEndpoint(endpoint string) bool {
-	return strings.HasPrefix(endpoint, "http://") || strings.HasPrefix(endpoint, "https://")
+func isHttpEndpoint(endpoint *url.URL) bool {
+	return endpoint.Scheme == SchemeHTTP || endpoint.Scheme == SchemeHTTPS
 }
 
 func GetConnectProxy(p Config) (ConnectProxy, error) {

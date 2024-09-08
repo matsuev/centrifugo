@@ -1333,14 +1333,6 @@ func setupLogging() *os.File {
 	return nil
 }
 
-func redactedUrl(endpoint string) string {
-	if parsedUrl, err := url.Parse(endpoint); err != nil {
-		return ""
-	} else {
-		return parsedUrl.Redacted()
-	}
-}
-
 func handleSignals(
 	configFile string, n *centrifuge.Node, ruleContainer *rule.Container, tokenVerifier *jwtverify.VerifierJWT,
 	subTokenVerifier *jwtverify.VerifierJWT, httpServers []*http.Server, grpcAPIServer *grpc.Server, grpcUniServer *grpc.Server,
@@ -1910,7 +1902,7 @@ func granularProxiesFromConfig(v *viper.Viper) []proxy.Config {
 		if p.Timeout == 0 {
 			p.Timeout = tools.Duration(time.Second)
 		}
-		if p.Endpoint == "" {
+		if p.Endpoint == nil {
 			log.Fatal().Msgf("no endpoint set for proxy %s", p.Name)
 		}
 		names[p.Name] = struct{}{}
@@ -2092,80 +2084,94 @@ func proxyMapConfig() (*client.ProxyMap, bool) {
 	proxyStreamSubscribeTimeout := GetDuration("proxy_subscribe_stream_timeout")
 
 	if connectEndpoint != "" {
-		proxyConfig.Endpoint = connectEndpoint
+		if proxyConfig.Endpoint, err = url.Parse(connectEndpoint); err != nil {
+			log.Fatal().Msgf("error creating connect proxy: %v", err)
+		}
 		proxyConfig.Timeout = tools.Duration(connectTimeout)
 		var err error
 		proxyMap.ConnectProxy, err = proxy.GetConnectProxy(proxyConfig)
 		if err != nil {
 			log.Fatal().Msgf("error creating connect proxy: %v", err)
 		}
-		log.Info().Str("endpoint", redactedUrl(connectEndpoint)).Msg("connect proxy enabled")
+		log.Info().Str("endpoint", proxyConfig.Endpoint.Redacted()).Msg("connect proxy enabled")
 	}
 
 	if refreshEndpoint != "" {
-		proxyConfig.Endpoint = refreshEndpoint
+		if proxyConfig.Endpoint, err = url.Parse(refreshEndpoint); err != nil {
+			log.Fatal().Msgf("error creating refresh proxy: %v", err)
+		}
 		proxyConfig.Timeout = tools.Duration(refreshTimeout)
 		var err error
 		proxyMap.RefreshProxy, err = proxy.GetRefreshProxy(proxyConfig)
 		if err != nil {
 			log.Fatal().Msgf("error creating refresh proxy: %v", err)
 		}
-		log.Info().Str("endpoint", redactedUrl(refreshEndpoint)).Msg("refresh proxy enabled")
+		log.Info().Str("endpoint", proxyConfig.Endpoint.Redacted()).Msg("refresh proxy enabled")
 	}
 
 	if subscribeEndpoint != "" {
-		proxyConfig.Endpoint = subscribeEndpoint
+		if proxyConfig.Endpoint, err = url.Parse(subscribeEndpoint); err != nil {
+			log.Fatal().Msgf("error creating subscribe proxy: %v", err)
+		}
 		proxyConfig.Timeout = tools.Duration(subscribeTimeout)
 		sp, err := proxy.GetSubscribeProxy(proxyConfig)
 		if err != nil {
 			log.Fatal().Msgf("error creating subscribe proxy: %v", err)
 		}
 		proxyMap.SubscribeProxies[""] = sp
-		log.Info().Str("endpoint", redactedUrl(subscribeEndpoint)).Msg("subscribe proxy enabled")
+		log.Info().Str("endpoint", proxyConfig.Endpoint.Redacted()).Msg("subscribe proxy enabled")
 	}
 
 	if publishEndpoint != "" {
-		proxyConfig.Endpoint = publishEndpoint
+		if proxyConfig.Endpoint, err = url.Parse(publishEndpoint); err != nil {
+			log.Fatal().Msgf("error creating publish proxy: %v", err)
+		}
 		proxyConfig.Timeout = tools.Duration(publishTimeout)
 		pp, err := proxy.GetPublishProxy(proxyConfig)
 		if err != nil {
 			log.Fatal().Msgf("error creating publish proxy: %v", err)
 		}
 		proxyMap.PublishProxies[""] = pp
-		log.Info().Str("endpoint", redactedUrl(publishEndpoint)).Msg("publish proxy enabled")
+		log.Info().Str("endpoint", proxyConfig.Endpoint.Redacted()).Msg("publish proxy enabled")
 	}
 
 	if rpcEndpoint != "" {
-		proxyConfig.Endpoint = rpcEndpoint
+		if proxyConfig.Endpoint, err = url.Parse(rpcEndpoint); err != nil {
+			log.Fatal().Msgf("error creating rpc proxy: %v", err)
+		}
 		proxyConfig.Timeout = tools.Duration(rpcTimeout)
 		rp, err := proxy.GetRpcProxy(proxyConfig)
 		if err != nil {
 			log.Fatal().Msgf("error creating rpc proxy: %v", err)
 		}
 		proxyMap.RpcProxies[""] = rp
-		log.Info().Str("endpoint", redactedUrl(rpcEndpoint)).Msg("RPC proxy enabled")
+		log.Info().Str("endpoint", proxyConfig.Endpoint.Redacted()).Msg("RPC proxy enabled")
 	}
 
 	if subRefreshEndpoint != "" {
-		proxyConfig.Endpoint = subRefreshEndpoint
+		if proxyConfig.Endpoint, err = url.Parse(subRefreshEndpoint); err != nil {
+			log.Fatal().Msgf("error creating sub refresh proxy: %v", err)
+		}
 		proxyConfig.Timeout = tools.Duration(subRefreshTimeout)
 		srp, err := proxy.GetSubRefreshProxy(proxyConfig)
 		if err != nil {
 			log.Fatal().Msgf("error creating sub refresh proxy: %v", err)
 		}
 		proxyMap.SubRefreshProxies[""] = srp
-		log.Info().Str("endpoint", redactedUrl(subRefreshEndpoint)).Msg("sub refresh proxy enabled")
+		log.Info().Str("endpoint", proxyConfig.Endpoint.Redacted()).Msg("sub refresh proxy enabled")
 	}
 
 	if proxyStreamSubscribeEndpoint != "" {
-		proxyConfig.Endpoint = proxyStreamSubscribeEndpoint
+		if proxyConfig.Endpoint, err = url.Parse(proxyStreamSubscribeEndpoint); err != nil {
+			log.Fatal().Msgf("error creating subscribe stream proxy: %v", err)
+		}
 		proxyConfig.Timeout = tools.Duration(proxyStreamSubscribeTimeout)
 		streamProxy, err := proxy.NewSubscribeStreamProxy(proxyConfig)
 		if err != nil {
 			log.Fatal().Msgf("error creating subscribe stream proxy: %v", err)
 		}
 		proxyMap.SubscribeStreamProxies[""] = streamProxy
-		log.Info().Str("endpoint", redactedUrl(proxyStreamSubscribeEndpoint)).Msg("subscribe stream proxy enabled")
+		log.Info().Str("endpoint", proxyConfig.Endpoint.Redacted()).Msg("subscribe stream proxy enabled")
 	}
 
 	keepHeadersInContext := connectEndpoint != "" || refreshEndpoint != "" ||
@@ -2269,7 +2275,7 @@ func granularProxyMapConfig(ruleConfig rule.Config) (*client.ProxyMap, bool) {
 		if !ok {
 			log.Fatal().Msgf("subscribe stream proxy not found: %s", subscribeStreamProxyName)
 		}
-		if strings.HasPrefix(p.Endpoint, "http") {
+		if p.Endpoint.Scheme == "http" {
 			log.Fatal().Msgf("error creating subscribe stream proxy %s only GRPC endpoints supported", subscribeStreamProxyName)
 		}
 		sp, err := proxy.NewSubscribeStreamProxy(p)
@@ -2330,7 +2336,7 @@ func granularProxyMapConfig(ruleConfig rule.Config) (*client.ProxyMap, bool) {
 			if !ok {
 				log.Fatal().Msgf("subscribe stream proxy not found: %s", subscribeStreamProxyName)
 			}
-			if strings.HasPrefix(p.Endpoint, "http") {
+			if p.Endpoint.Scheme == "http" {
 				log.Fatal().Msgf("error creating subscribe stream proxy %s only GRPC endpoints supported", subscribeStreamProxyName)
 			}
 			ssp, err := proxy.NewSubscribeStreamProxy(p)
