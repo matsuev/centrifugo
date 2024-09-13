@@ -2,8 +2,11 @@ version: "3.8"
 
 services:
   nats:
-    image: nats:2.9-alpine
+    image: nats:alpine
     container_name: nats_server
+    volumes:
+      - ./misc/nats_server/nats-server.conf:/etc/nats/nats-server.conf
+      - ./misc/nats_server/data:/data
     ports:
       - "4222:4222"
       - "8222:8222"
@@ -19,11 +22,12 @@ services:
     tmpfs:
       - /var/lib/postgresql/data
     healthcheck:
-      test: [ "CMD", "pg_isready", "-U", "test" ]
+      test: ["CMD", "pg_isready", "-U", "test"]
       interval: 1s
       timeout: 5s
       retries: 10
-    command: ["postgres", "-c", "wal_level=logical", "-c", "wal_writer_delay=10ms"]
+    command:
+      ["postgres", "-c", "wal_level=logical", "-c", "wal_writer_delay=10ms"]
 
   zookeeper:
     image: confluentinc/cp-zookeeper:latest
@@ -38,7 +42,14 @@ services:
     ports:
       - "29092:29092"
     healthcheck:
-      test: ["CMD", "kafka-topics", "--list", "--bootstrap-server", "localhost:9092"]
+      test:
+        [
+          "CMD",
+          "kafka-topics",
+          "--list",
+          "--bootstrap-server",
+          "localhost:9092",
+        ]
       interval: 2s
       timeout: 5s
       retries: 10

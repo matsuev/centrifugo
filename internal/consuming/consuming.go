@@ -19,6 +19,7 @@ type ConsumerType string
 const (
 	ConsumerTypePostgres = "postgresql"
 	ConsumerTypeKafka    = "kafka"
+	ConsumerTypeNATS     = "nats"
 )
 
 type ConsumerConfig struct {
@@ -32,6 +33,8 @@ type ConsumerConfig struct {
 	Postgres *PostgresConfig `mapstructure:"postgresql" json:"postgresql,omitempty"`
 	// Kafka allows defining options for consumer of kafka type.
 	Kafka *KafkaConfig `mapstructure:"kafka" json:"kafka,omitempty"`
+	// NATS allows defining options for consumer of nats type.
+	NATS *NATSConfig `mapstructure:"nats" json:"nats,omitempty"`
 }
 
 type Dispatcher interface {
@@ -96,6 +99,23 @@ func New(nodeID string, logger Logger, dispatcher Dispatcher, configs []Consumer
 			consumer, err := NewKafkaConsumer(config.Name, nodeID, logger, dispatcher, *config.Kafka)
 			if err != nil {
 				return nil, fmt.Errorf("error initializing Kafka consumer (%s): %w", config.Name, err)
+			}
+			log.Info().Str("consumer_name", config.Name).Msg("running consumer")
+			services = append(services, consumer)
+		} else if config.Type == ConsumerTypeNATS {
+			if config.Disabled {
+				continue
+			}
+			if config.NATS == nil {
+				config.NATS = &NATSConfig{}
+			}
+			brokers := os.Getenv("CENTRIFUGO_CONSUMERS_NATS_" + strings.ToUpper(config.Name) + "_BROKERS")
+			if brokers != "" {
+				config.NATS.Brokers = strings.Split(brokers, " ")
+			}
+			consumer, err := NewNATSConsumer(config.Name, logger, dispatcher, *config.NATS)
+			if err != nil {
+				return nil, fmt.Errorf("error initializing NATS consumer (%s): %w", config.Name, err)
 			}
 			log.Info().Str("consumer_name", config.Name).Msg("running consumer")
 			services = append(services, consumer)
