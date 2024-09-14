@@ -32,8 +32,8 @@ type NATSConfig struct {
 	// MaxPollRecords
 	MaxPollRecords int `mapstructure:"max_poll_records" json:"max_poll_records"`
 
-	// RetryReconnect
-	RetryReconnect bool `mapstructure:"retry_reconnect" json:"retry_reconnect"`
+	// DisableReconnect
+	DisableReconnect bool `mapstructure:"disable_reconnect" json:"disable_reconnect"`
 
 	// HeartbeatInterval
 	HeartbeatInterval string `mapstructure:"heartbeat_interval" json:"heartbeat_interval"`
@@ -109,7 +109,7 @@ func NewNATSConsumer(name string, logger Logger, dispatcher Dispatcher, config N
 	nc, err := nats.Connect(
 		natsUrl,
 		nats.MaxReconnects(-1), // always reconnect
-		nats.RetryOnFailedConnect(config.RetryReconnect),        // auto reconnect to broker
+		nats.RetryOnFailedConnect(!config.DisableReconnect),     // auto reconnect to broker
 		nats.ConnectHandler(newConsumer.connectedHandler()),     //
 		nats.ReconnectHandler(newConsumer.reconnectHandler()),   //
 		nats.DisconnectHandler(newConsumer.disconnectHandler()), //
