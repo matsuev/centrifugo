@@ -32,14 +32,14 @@ type NATSConfig struct {
 	// MaxPollRecords
 	MaxPollRecords int `mapstructure:"max_poll_records" json:"max_poll_records"`
 
-	// RetryOnFailedConnect
-	RetryOnFailedConnect bool `mapstructure:"retry_on_failed_connect" json:"retry_on_failed_connect"`
-
-	// CreateStreamIfNotExist
-	CreateStreamIfNotExist bool `mapstructure:"create_stream_if_not_exist" json:"create_stream_if_not_exist"`
+	// RetryReconnect
+	RetryReconnect bool `mapstructure:"retry_reconnect" json:"retry_reconnect"`
 
 	// HeartbeatInterval
 	HeartbeatInterval string `mapstructure:"heartbeat_interval" json:"heartbeat_interval"`
+
+	// CreateStreamIfNotExist
+	CreateStreamIfNotExist bool `mapstructure:"create_stream_if_not_exist" json:"create_stream_if_not_exist"`
 
 	// TLS may be enabled, and mTLS auth may be configured.
 	TLS              bool `mapstructure:"tls" json:"tls"`
@@ -86,11 +86,11 @@ func NewNATSConsumer(name string, logger Logger, dispatcher Dispatcher, config N
 	if len(config.ConsumerGroup) == 0 {
 		return nil, errors.New("consumer_group required")
 	}
-	if _, err := time.ParseDuration(config.HeartbeatInterval); err != nil {
-		logger.Log(centrifuge.NewLogEntry(centrifuge.LogLevelWarn, "NATS heartbeat_interval  error on shutdown", MapAny{"error": err.Error()}))
+	if len(config.HeartbeatInterval) == 0 {
 		config.HeartbeatInterval = DefaultHeartbitString
 	}
-	if len(config.HeartbeatInterval) == 0 {
+	if _, err := time.ParseDuration(config.HeartbeatInterval); err != nil {
+		logger.Log(centrifuge.NewLogEntry(centrifuge.LogLevelWarn, "NATS wrong heartbeat_interval (default value is used)", MapAny{"consumer_name": name}))
 		config.HeartbeatInterval = DefaultHeartbitString
 	}
 	if config.MaxPollRecords < 1 {
@@ -108,8 +108,8 @@ func NewNATSConsumer(name string, logger Logger, dispatcher Dispatcher, config N
 
 	nc, err := nats.Connect(
 		natsUrl,
-		nats.MaxReconnects(-1),
-		nats.RetryOnFailedConnect(config.RetryOnFailedConnect),  // auto reconnect to broker
+		nats.MaxReconnects(-1), // always reconnect
+		nats.RetryOnFailedConnect(config.RetryReconnect),        // auto reconnect to broker
 		nats.ConnectHandler(newConsumer.connectedHandler()),     //
 		nats.ReconnectHandler(newConsumer.reconnectHandler()),   //
 		nats.DisconnectHandler(newConsumer.disconnectHandler()), //
@@ -143,6 +143,7 @@ func (c *NATSConsumer) connectedHandler() nats.ConnHandler {
 	return func(conn *nats.Conn) {
 		var err error
 
+		// Create JetStream connection
 		if c.js, err = jetstream.New(conn); err != nil {
 			c.logger.Log(centrifuge.NewLogEntry(centrifuge.LogLevelWarn, "NATS connect error (attempting to reconnect)", MapAny{"error": err.Error(), "consumer_name": c.name}))
 
@@ -151,15 +152,22 @@ func (c *NATSConsumer) connectedHandler() nats.ConnHandler {
 
 		c.logger.Log(centrifuge.NewLogEntry(centrifuge.LogLevelDebug, "NATS consumer connected", MapAny{"consumer_name": c.name}))
 
+		// !!!EXPEREMENTAL!!!
+		// If stream not found and config.CreateStreamIfNotExist is true
+		// try to create new stream with default options
+		//
+		// In production mode, you first need to initialize the broker, then set up the Centrifugo configuration for connection
 		if c.stream, err = c.js.Stream(context.Background(), c.config.StreamName); err != nil {
 			if errors.Is(err, jetstream.ErrStreamNotFound) && c.config.CreateStreamIfNotExist {
+
+				// If stream does not exist, trying to create it
 				c.logger.Log(centrifuge.NewLogEntry(centrifuge.LogLevelDebug, "NATS create new stream", MapAny{"consumer_name": c.name, "stream_name": c.config.StreamName}))
 
 				if c.stream, err = c.js.CreateOrUpdateStream(context.Background(), jetstream.StreamConfig{
 					Name:      c.config.StreamName,
 					Subjects:  c.config.Subjects,
-					Retention: jetstream.WorkQueuePolicy,
-					MaxAge:    DefaultMaxAge,
+					Retention: jetstream.WorkQueuePolicy, // !IMPORTANT! This ensures that the message will be delivered only once.
+					MaxAge:    DefaultMaxAge,             // Message lifetime in queue, default is 1 minute
 				}); err != nil {
 					c.logger.Log(centrifuge.NewLogEntry(centrifuge.LogLevelWarn, "NATS stream create error", MapAny{"error": err.Error(), "consumer_name": c.name, "stream_name": c.config.StreamName}))
 
@@ -172,6 +180,7 @@ func (c *NATSConsumer) connectedHandler() nats.ConnHandler {
 			}
 		}
 
+		// Create NATS queue consumer
 		if c.cons, err = c.stream.CreateOrUpdateConsumer(context.Background(), jetstream.ConsumerConfig{
 			Durable:        c.config.ConsumerGroup,
 			FilterSubjects: c.config.Subjects,
@@ -181,11 +190,13 @@ func (c *NATSConsumer) connectedHandler() nats.ConnHandler {
 			return
 		}
 
+		// Parse config.HeartbeatInterval from string to time.Duration
 		heartbitInterval, err := time.ParseDuration(c.config.HeartbeatInterval)
 		if err != nil {
 			heartbitInterval = DefaultHeartbitInterval
 		}
 
+		// Set consumer handler function
 		if _, err := c.cons.Consume(
 			c.messageHandler(context.Background()),
 			jetstream.ConsumeErrHandler(c.errorHandler()),
@@ -201,6 +212,7 @@ func (c *NATSConsumer) connectedHandler() nats.ConnHandler {
 
 func (c *NATSConsumer) messageHandler(ctx context.Context) jetstream.MessageHandler {
 	return func(msg jetstream.Msg) {
+		// confirmation of message processing
 		defer func() {
 			if err := msg.Ack(); err != nil {
 				c.logger.Log(centrifuge.NewLogEntry(centrifuge.LogLevelError, "NATS acknowledge message error", MapAny{"error": err.Error(), "consumer_name": c.name}))
@@ -209,10 +221,13 @@ func (c *NATSConsumer) messageHandler(ctx context.Context) jetstream.MessageHand
 
 		var ev NATSMessage
 
+		// Try unmarshal message data to NTASMessage
 		if err := json.Unmarshal(msg.Data(), &ev); err != nil {
 			c.logger.Log(centrifuge.NewLogEntry(centrifuge.LogLevelError, "NATS unmarshalling event error", MapAny{"error": err.Error(), "subject": msg.Subject()}))
+			return
 		}
 
+		// Dispatch message
 		if err := c.dispatcher.Dispatch(ctx, ev.Method, ev.Payload); err != nil {
 			c.logger.Log(centrifuge.NewLogEntry(centrifuge.LogLevelError, "NATS processing consumed event error", MapAny{"error": err.Error(), "consumer_name": c.name, "method": ev.Method}))
 		}
